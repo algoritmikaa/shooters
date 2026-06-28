@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zombie Shooter – Управление турелями</title>
+    <title>Zombie Shooter – Босс с огромным здоровьем</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -72,7 +72,8 @@
             player: null, zombies: [],
             bullets: [], particles: [],
             explosions: [], grenades: [], c4s: [],
-            turrets: [],
+            turrets: [], rockets: [],
+            enemyBullets: [],
             wave: 1, zombiesToSpawn: 5, zombiesAlive: 0,
             kills: 0, money: 0,
             damageCooldown: 0, invincibleTimer: 0,
@@ -92,7 +93,8 @@
             abilityMaxCooldown: 0,
             abilityDuration: 0,
             abilityActive: false,
-            abilityBonus: null
+            abilityBonus: null,
+            maxHealthBonus: 0
         };
 
         // ==================== КЛАССЫ ====================
@@ -116,7 +118,10 @@
             shotgun: { name:'SPAS-12',      type:'hitscan', damage:1.8, fireRate:0.8,  magSize:8,  reloadTime:3.0, pellets:5, speed:10, radius:3, color:'#ff6666', piercing:0, recoil:0.15, price:400 },
             awp:     { name:'AWP',          type:'hitscan', damage:6,   fireRate:1.5,  magSize:5,  reloadTime:3.5, pellets:1, speed:25, radius:3, color:'#ff4444', piercing:3, recoil:0.2,  price:500 },
             flamethrower: { name:'Огнемёт',  type:'flame',  damage:0.6, fireRate:0.05, magSize:100, reloadTime:2.0, pellets:1, speed:6, radius:8, color:'#ff6600', piercing:0, recoil:0.1,  price:0 },
-            flamethrower_shop: { name:'Огнемёт (маг.)', type:'flame', damage:0.6, fireRate:0.05, magSize:100, reloadTime:2.0, pellets:1, speed:6, radius:4, color:'#ff6600', piercing:0, recoil:0.1, price:450 }
+            flamethrower_shop: { name:'Огнемёт (маг.)', type:'flame', damage:0.6, fireRate:0.05, magSize:100, reloadTime:2.0, pellets:1, speed:6, radius:4, color:'#ff6600', piercing:0, recoil:0.1, price:450 },
+            rpg:     { name:'РПГ-7',        type:'rocket', damage:10, fireRate:1.5, magSize:1, reloadTime:3.0, pellets:1, speed:8, radius:6, color:'#ff4400', piercing:0, recoil:0.0, price:600, explosionRadius:100 },
+            machete: { name:'Мачете',       type:'melee', damage:5, fireRate:0.5, magSize:Infinity, reloadTime:0, pellets:1, speed:0, radius:35, color:'#cccccc', piercing:0, recoil:0, price:200, meleeRange:40 },
+            katana:  { name:'Катана',       type:'melee', damage:7, fireRate:0.6, magSize:Infinity, reloadTime:0, pellets:1, speed:0, radius:40, color:'#silver', piercing:0, recoil:0, price:400, meleeRange:50, deflect:true }
         };
 
         // ==================== ИГРОК ====================
@@ -248,14 +253,59 @@
                 ctx.fillStyle = 'black'; ctx.fillRect(-3,-13,1,1); ctx.fillRect(3,-13,1,1);
                 ctx.fillStyle = '#8b0000'; ctx.fillRect(-5,-8,3,2);
                 ctx.restore();
+                this.drawHealthBar(ctx);
+            }
+            drawHealthBar(ctx) {
+                if (this.health >= this.maxHealth) return;
+                const barW = this.boss ? 50 : 30, barH = 4;
+                const x = this.x - barW/2, y = this.y - (this.boss ? 35 : 25);
+                ctx.fillStyle = 'red';
+                ctx.fillRect(x, y, barW, barH);
+                const pct = Math.max(0, this.health / this.maxHealth);
+                ctx.fillStyle = this.boss ? '#ffaa00' : '#0f0';
+                ctx.fillRect(x, y, barW * pct, barH);
             }
         }
+
+        class ShootingZombie extends Zombie {
+            constructor() {
+                super();
+                this.shootTimer = 2 + Math.random() * 3;
+                this.radius = 18;
+                this.health = 4 + game.wave;
+                this.maxHealth = this.health;
+                this.boss = false;
+            }
+            update() {
+                super.update();
+                this.shootTimer -= 1/60;
+                if (this.shootTimer <= 0 && game.player) {
+                    this.shootTimer = 2 + Math.random() * 3;
+                    const angle = Math.atan2(game.player.y - this.y, game.player.x - this.x);
+                    game.enemyBullets.push(new EnemyBullet(this.x, this.y, angle));
+                }
+            }
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.translate(Math.sin(this.wobble)*3, 0);
+                ctx.fillStyle = this.burning > 0 ? '#8b4500' : '#4a1a2e';
+                ctx.fillRect(-11,-9,22,20);
+                ctx.fillStyle = this.burning > 0 ? '#cc5500' : '#8b0045';
+                ctx.beginPath(); ctx.arc(0,-14,8,0,Math.PI*2); ctx.fill();
+                ctx.fillStyle = 'white'; ctx.fillRect(-5,-16,2,2); ctx.fillRect(3,-16,2,2);
+                ctx.fillStyle = '#ff0'; ctx.fillRect(-6,-20,4,6); ctx.fillRect(2,-20,4,6);
+                ctx.restore();
+                this.drawHealthBar(ctx);
+            }
+        }
+
         class BossZombie extends Zombie {
             constructor() {
                 super();
                 this.radius = 30;
                 this.speed = 0.8 + game.wave * 0.08;
-                this.health = 40 + game.wave * 15;
+                this.health = 50 + game.wave * 15;
                 this.maxHealth = this.health;
                 this.boss = true;
             }
@@ -272,10 +322,34 @@
                 ctx.fillStyle = '#555';
                 ctx.fillRect(-15,-40,6,16); ctx.fillRect(9,-40,6,16);
                 ctx.restore();
+                this.drawHealthBar(ctx);
             }
         }
 
-        // ==================== ПУЛЯ ====================
+        // ==================== ВРАЖЕСКАЯ ПУЛЯ ====================
+        class EnemyBullet {
+            constructor(x, y, angle) {
+                this.x = x; this.y = y;
+                const speed = 4;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                this.life = 1;
+                this.radius = 3;
+                this.damage = 12;
+                this.isEnemy = true;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                if (this.x<0||this.x>W||this.y<0||this.y>H) this.life = 0;
+            }
+            draw(ctx) {
+                ctx.fillStyle = this.isEnemy ? '#ff0000' : '#00ff00';
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, 2*Math.PI); ctx.fill();
+            }
+        }
+
+        // ==================== ПУЛЯ ИГРОКА ====================
         class Bullet {
             constructor(x, y, angle, weapon) {
                 this.x = x; this.y = y;
@@ -298,6 +372,70 @@
                 ctx.shadowBlur = this.isFlame ? 12 : 6;
                 ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.fill();
                 ctx.shadowBlur = 0;
+            }
+        }
+
+        // ==================== РАКЕТА (РПГ) ====================
+        class Rocket {
+            constructor(x, y, angle, damage, explosionRadius) {
+                this.x = x; this.y = y;
+                const speed = 8;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                this.life = 1;
+                this.damage = damage;
+                this.explosionRadius = explosionRadius;
+                this.radius = 5;
+                this.trail = [];
+            }
+            update() {
+                this.trail.push({x: this.x, y: this.y, life: 0.2});
+                this.x += this.vx;
+                this.y += this.vy;
+                for (let i = this.trail.length-1; i >=0; i--) {
+                    this.trail[i].life -= 1/60;
+                    if (this.trail[i].life <= 0) this.trail.splice(i,1);
+                }
+                for (let z of game.zombies) {
+                    if (Math.hypot(this.x - z.x, this.y - z.y) < z.radius + this.radius) {
+                        this.explode();
+                        return;
+                    }
+                }
+                if (this.x < -20 || this.x > W+20 || this.y < -20 || this.y > H+20) {
+                    this.explode();
+                }
+            }
+            explode() {
+                this.life = 0;
+                game.explosions.push(new Explosion(this.x, this.y, this.explosionRadius, 1.5));
+                spawnBlood(this.x, this.y, 20);
+                for (let z of game.zombies) {
+                    if (Math.hypot(this.x - z.x, this.y - z.y) < this.explosionRadius) {
+                        z.health -= 40;
+                        z.burning = 2.0;
+                    }
+                }
+                if (game.player && Math.hypot(this.x - game.player.x, this.y - game.player.y) < this.explosionRadius) {
+                    damagePlayer(this.damage * 0.8);
+                }
+            }
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                const angle = Math.atan2(this.vy, this.vx);
+                ctx.rotate(angle);
+                ctx.fillStyle = '#666';
+                ctx.fillRect(-10, -4, 20, 8);
+                ctx.fillStyle = '#ff4400';
+                ctx.beginPath(); ctx.arc(10, 0, 5, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#ff0';
+                ctx.beginPath(); ctx.arc(-10, 0, 3, 0, Math.PI*2); ctx.fill();
+                ctx.restore();
+                for (let t of this.trail) {
+                    ctx.fillStyle = 'rgba(255,100,0,0.5)';
+                    ctx.beginPath(); ctx.arc(t.x, t.y, 2, 0, 2*Math.PI); ctx.fill();
+                }
             }
         }
 
@@ -325,7 +463,9 @@
                 game.explosions.push(new Explosion(this.x, this.y, 80, 1));
                 spawnBlood(this.x, this.y, 20);
                 for (let z of game.zombies) {
-                    if (Math.hypot(this.x - z.x, this.y - z.y) < 80) z.health = 0;
+                    if (Math.hypot(this.x - z.x, this.y - z.y) < 80) {
+                        z.health -= 25;
+                    }
                 }
                 if (game.player && Math.hypot(this.x - game.player.x, this.y - game.player.y) < 80) damagePlayer(25);
             }
@@ -341,7 +481,11 @@
                 this.life = 0;
                 game.explosions.push(new Explosion(this.x, this.y, 120, 2));
                 spawnBlood(this.x, this.y, 40);
-                for (let z of game.zombies) { if (Math.hypot(this.x - z.x, this.y - z.y) < 120) z.health = 0; }
+                for (let z of game.zombies) {
+                    if (Math.hypot(this.x - z.x, this.y - z.y) < 120) {
+                        z.health -= 60;
+                    }
+                }
                 if (game.player && Math.hypot(this.x - game.player.x, this.y - game.player.y) < 120) damagePlayer(40);
             }
             draw(ctx) {
@@ -400,7 +544,11 @@
             game.zombiesToSpawn = 4 + wave * 2;
             game.zombiesAlive = 0;
             for (let i=0; i<game.zombiesToSpawn; i++) {
-                game.zombies.push(new Zombie());
+                if (wave >= 3 && Math.random() < 0.2) {
+                    game.zombies.push(new ShootingZombie());
+                } else {
+                    game.zombies.push(new Zombie());
+                }
                 game.zombiesAlive++;
             }
             if (wave % 5 === 0) {
@@ -415,7 +563,7 @@
             game.player = new Player(className);
             game.zombies = []; game.bullets = []; game.particles = [];
             game.grenades = []; game.c4s = []; game.explosions = [];
-            game.turrets = [];
+            game.turrets = []; game.rockets = []; game.enemyBullets = [];
             game.wave = 1; game.kills = 0; game.money = 0;
             game.damageCooldown = 0; game.invincibleTimer = 0;
             game.shakeAmount = 0; game.damageFlash = 0;
@@ -436,6 +584,7 @@
             game.abilityDuration = 0;
             game.abilityActive = false;
             game.abilityBonus = null;
+            game.maxHealthBonus = 0;
             startWave();
         }
 
@@ -463,13 +612,16 @@
                     game.abilityCooldown = 12;
                     break;
                 case 'heal':
-                    p.health = Math.min(p.maxHealth, p.health + 40);
+                    p.health = Math.min(p.maxHealth + game.maxHealthBonus, p.health + 40);
                     game.abilityCooldown = 20;
                     break;
                 case 'fireRing':
                     for (let i=0; i<40; i++) game.particles.push(new Particle(p.x, p.y, Math.cos(i/40*2*Math.PI)*3, Math.sin(i/40*2*Math.PI)*3, 'rgb(255,100,0,1)', 5, 15));
                     for (let z of game.zombies) {
-                        if (Math.hypot(p.x - z.x, p.y - z.y) < 90) { z.burning = 3.0; z.health -= 5; }
+                        if (Math.hypot(p.x - z.x, p.y - z.y) < 90) {
+                            z.burning = 3.0;
+                            z.health -= 5;
+                        }
                     }
                     game.abilityCooldown = 10;
                     break;
@@ -510,6 +662,52 @@
             }
         }
 
+        function meleeAttack(weaponData) {
+            const p = game.player;
+            const angle = Math.atan2(game.mouseY - p.y, game.mouseX - p.x);
+            const range = weaponData.meleeRange || 40;
+            for (let z of game.zombies) {
+                const dist = Math.hypot(z.x - p.x, z.y - p.y);
+                const angleToZ = Math.atan2(z.y - p.y, z.x - p.x);
+                let diff = angleToZ - angle;
+                while (diff > Math.PI) diff -= 2*Math.PI;
+                while (diff < -Math.PI) diff += 2*Math.PI;
+                if (dist < range && Math.abs(diff) < Math.PI/2.5) {
+                    z.health -= weaponData.damage;
+                    spawnBlood(z.x, z.y, 5);
+                }
+            }
+            if (weaponData.deflect) {
+                const deflectRange = 60;
+                for (let i = game.enemyBullets.length-1; i >= 0; i--) {
+                    const b = game.enemyBullets[i];
+                    if (!b.isEnemy) continue;
+                    const dist = Math.hypot(b.x - p.x, b.y - p.y);
+                    if (dist < deflectRange) {
+                        b.isEnemy = false;
+                        let closestZ = null, minD = 300;
+                        for (let z of game.zombies) {
+                            const d = Math.hypot(b.x - z.x, b.y - z.y);
+                            if (d < minD) { minD = d; closestZ = z; }
+                        }
+                        if (closestZ) {
+                            const a = Math.atan2(closestZ.y - b.y, closestZ.x - b.x);
+                            b.vx = Math.cos(a) * 7;
+                            b.vy = Math.sin(a) * 7;
+                        } else {
+                            b.vx *= -1.2;
+                            b.vy *= -1.2;
+                        }
+                    }
+                }
+            }
+            for (let i=0; i<8; i++) {
+                const a = angle + (Math.random()-0.5)*0.8;
+                game.particles.push(new Particle(p.x + Math.cos(angle)*15, p.y + Math.sin(angle)*15,
+                    Math.cos(a)*2, Math.sin(a)*2, 'rgb(200,200,200,1)', 3, 10));
+            }
+        }
+
         function update() {
             if (!game.running || game.paused) return;
             if (game.abilityCooldown > 0) game.abilityCooldown -= 1/60;
@@ -529,7 +727,7 @@
             if (game.shakeAmount > 0) game.shakeAmount *= 0.9;
             if (game.damageFlash > 0) game.damageFlash -= 0.02;
             if (game.damageCooldown > 0) game.damageCooldown -= 1/60;
-            if (game.player.regen > 0) game.player.health = Math.min(game.player.maxHealth, game.player.health + game.player.regen / 60);
+            if (game.player.regen > 0) game.player.health = Math.min(game.player.maxHealth + game.maxHealthBonus, game.player.health + game.player.regen / 60);
             if (game.reloading) {
                 game.reloadTimer -= 1/60;
                 if (game.reloadTimer <= 0) {
@@ -541,6 +739,20 @@
             game.player.update();
             game.turrets.forEach(t => t.update());
             game.zombies.forEach(z => z.update());
+            game.rockets.forEach(r => r.update());
+            game.rockets = game.rockets.filter(r => r.life > 0);
+            game.enemyBullets.forEach(b => b.update());
+            game.enemyBullets = game.enemyBullets.filter(b => b.life > 0);
+
+            for (let i = game.enemyBullets.length-1; i >= 0; i--) {
+                const b = game.enemyBullets[i];
+                if (!b.isEnemy) continue;
+                if (game.player && Math.hypot(b.x - game.player.x, b.y - game.player.y) < game.player.radius + b.radius) {
+                    damagePlayer(b.damage);
+                    b.life = 0;
+                }
+            }
+
             if (game.damageCooldown <= 0 && game.invincibleTimer <= 0) {
                 for (let z of game.zombies) {
                     if (Math.hypot(z.x - game.player.x, z.y - game.player.y) < game.player.radius + z.radius) {
@@ -566,15 +778,28 @@
                     }
                 }
             }
+            for (let i = game.enemyBullets.length-1; i >= 0; i--) {
+                const b = game.enemyBullets[i];
+                if (b.isEnemy) continue;
+                for (let j = game.zombies.length-1; j >= 0; j--) {
+                    const z = game.zombies[j];
+                    if (Math.hypot(b.x - z.x, b.y - z.y) < z.radius + b.radius) {
+                        z.health -= 5;
+                        b.life = 0;
+                        break;
+                    }
+                }
+            }
+
             for (let j = game.zombies.length-1; j >= 0; j--) {
                 if (game.zombies[j].health <= 0) {
                     const z = game.zombies[j];
                     spawnBlood(z.x, z.y, z.boss ? 30 : 15);
                     if (game.abilityActive && game.abilityBonus?.type === 'rage' && game.abilityBonus.vamp) {
-                        game.player.health = Math.min(game.player.maxHealth, game.player.health + game.abilityBonus.vamp);
+                        game.player.health = Math.min(game.player.maxHealth + game.maxHealthBonus, game.player.health + game.abilityBonus.vamp);
                     }
                     game.zombies.splice(j,1);
-                    game.kills++; game.money += 25; game.zombiesAlive--;
+                    game.kills++; game.money += z.boss ? 200 : 25; game.zombiesAlive--;
                 }
             }
             game.grenades.forEach(g => g.update()); game.grenades = game.grenades.filter(g => g.life > 0);
@@ -587,7 +812,8 @@
         function shootWeapon() {
             if (!game.player || game.reloading) return;
             let wp = game.player.getCurrentWeapon();
-            if (!wp || wp.ammo <= 0) {
+            if (!wp) return;
+            if (wp.ammo <= 0 && wp.type !== 'melee') {
                 if (!game.reloading && wp) {
                     game.reloading = true;
                     game.reloadTimer = WEAPONS[game.weapons[game.currentWeaponIndex].key].reloadTime;
@@ -600,11 +826,22 @@
                 if (game.abilityBonus.type === 'markedShot') { dmgMult = game.abilityBonus.multDmg; pierceBonus = game.abilityBonus.pierce; }
                 else if (game.abilityBonus.type === 'rage') dmgMult = game.abilityBonus.multDmg;
             }
+
             game.shootTimer = wp.fireRate;
-            game.weapons[game.currentWeaponIndex].ammo--;
+            if (wp.type !== 'melee') game.weapons[game.currentWeaponIndex].ammo--;
+
             const angle = Math.atan2(game.mouseY - game.player.y, game.mouseX - game.player.x);
             const bx = game.player.x + Math.cos(angle)*25, by = game.player.y + Math.sin(angle)*25;
             const spread = wp.recoil || 0.05;
+
+            if (wp.type === 'melee') {
+                meleeAttack(wp);
+                return;
+            }
+            if (wp.type === 'rocket') {
+                game.rockets.push(new Rocket(bx, by, angle, wp.damage * dmgMult, wp.explosionRadius || 100));
+                return;
+            }
             const bulletData = {
                 damage: wp.damage * dmgMult, speed: wp.speed, radius: wp.radius,
                 color: wp.color, piercing: (wp.piercing || 0) + pierceBonus, isFlame: wp.type === 'flame'
@@ -628,19 +865,33 @@
 
         // ==================== МАГАЗИН ====================
         const shopItems = [
-            { name: 'Аптечка', cost: 50, action: () => { game.healpacks++; } },
+            { name: 'Аптечка (+30)', cost: 50, action: () => { game.healpacks++; } },
+            { name: 'Большая аптечка (+60)', cost: 120, action: () => { game.healpacks += 2; } },
             { name: 'Граната', cost: 75, action: () => { game.grenadeCount++; } },
             { name: 'C4', cost: 150, action: () => { game.c4Count++; } },
             { name: 'Спид-кола', cost: 50, action: () => { game.colaCount++; } },
-            { name: 'Турель', cost: 100, action: () => { game.turretCount++; } }
+            { name: 'Турель', cost: 100, action: () => { game.turretCount++; } },
+            { name: 'Бронежилет (+25 макс. HP)', cost: 200, action: () => { 
+                game.maxHealthBonus += 25; 
+                game.player.maxHealth += 25;
+                game.player.health = Math.min(game.player.health + 25, game.player.maxHealth);
+            }}
         ];
         function getShopWeapons() {
-            return Object.entries(WEAPONS).filter(([key,w]) => w.price > 0).map(([key,w]) => ({
+            return Object.entries(WEAPONS).filter(([key,w]) => w.price > 0 && w.type !== 'melee').map(([key,w]) => ({
                 key, name: w.name, cost: w.price,
                 stats: `Урон:${w.damage} Скор:${(1/w.fireRate).toFixed(1)}/с Отдача:${Math.round(w.recoil*100)}% Перезар:${w.reloadTime}с Маг:${w.magSize}`,
                 action: () => { if (!game.weapons.find(wp => wp.key === key)) game.weapons.push({ key, ammo: w.magSize }); }
             }));
         }
+        function getShopMelee() {
+            return Object.entries(WEAPONS).filter(([key,w]) => w.type === 'melee' && w.price > 0).map(([key,w]) => ({
+                key, name: w.name, cost: w.price,
+                stats: `Урон:${w.damage} Дальность:${w.meleeRange} Скор:${(1/w.fireRate).toFixed(1)}/с ${w.deflect?'🛡️Отражение':''}`,
+                action: () => { if (!game.weapons.find(wp => wp.key === key)) game.weapons.push({ key, ammo: Infinity }); }
+            }));
+        }
+
         function buyItem(index) {
             const item = shopItems[index];
             if (!item || game.money < item.cost) return;
@@ -676,7 +927,8 @@
                     ctx.fillStyle = '#fff';
                     ctx.font = '14px Arial';
                     ctx.fillText(w.name, x + 5, slotY + 20);
-                    ctx.fillText(`${game.weapons[i].ammo}/${w.magSize}`, x + 5, slotY + 40);
+                    const ammoText = w.magSize === Infinity ? '∞' : `${game.weapons[i].ammo}/${w.magSize}`;
+                    ctx.fillText(ammoText, x + 5, slotY + 40);
                 } else {
                     ctx.fillStyle = '#555';
                     ctx.font = '14px Arial';
@@ -722,9 +974,11 @@
             game.turrets.forEach(t => t.draw(ctx));
             game.zombies.forEach(z => z.draw(ctx));
             game.bullets.forEach(b => b.draw(ctx));
+            game.rockets.forEach(r => r.draw(ctx));
             game.grenades.forEach(g => g.draw(ctx));
             game.c4s.forEach(c => c.draw(ctx));
             game.explosions.forEach(e => e.draw(ctx));
+            game.enemyBullets.forEach(b => b.draw(ctx));
             if (game.player) game.player.draw(ctx);
             game.particles.forEach(p => p.draw(ctx));
             ctx.restore();
@@ -733,9 +987,8 @@
                 ctx.fillStyle = `rgba(255,0,0,${game.damageFlash*0.5})`; ctx.fillRect(0,0,W,H);
             }
 
-            // Верхний HUD
             ctx.fillStyle = 'white'; ctx.font = 'bold 16px Arial';
-            ctx.fillText(`❤️ ${Math.ceil(game.player?.health||0)}`, 20, 30);
+            ctx.fillText(`❤️ ${Math.ceil(game.player?.health||0)}/${game.player?.maxHealth||0}`, 20, 30);
             ctx.fillText(`Волна: ${game.wave}`, 20, 55);
             ctx.fillText(`💰 ${game.money}`, 20, 80);
             if (game.speedBoostTimer > 0) {
@@ -757,10 +1010,16 @@
                 ctx.fillStyle = 'white'; ctx.font = '28px Arial'; ctx.textAlign = 'center';
                 ctx.fillText('МАГАЗИН', W/2, 50);
                 ctx.font = '20px Arial';
-                ctx.fillStyle = game.shopTab === 'items' ? '#ffcc00' : '#aaa';
-                ctx.fillText('Предметы', W/2 - 100, 90);
-                ctx.fillStyle = game.shopTab === 'weapons' ? '#ffcc00' : '#aaa';
-                ctx.fillText('Оружие', W/2 + 100, 90);
+                const tabs = [
+                    { name: 'Предметы', tab: 'items', x: W/2 - 200 },
+                    { name: 'Оружие', tab: 'weapons', x: W/2 },
+                    { name: 'Ближний бой', tab: 'melee', x: W/2 + 200 }
+                ];
+                tabs.forEach(t => {
+                    ctx.fillStyle = game.shopTab === t.tab ? '#ffcc00' : '#aaa';
+                    ctx.fillText(t.name, t.x, 90);
+                });
+
                 if (game.shopTab === 'items') {
                     shopItems.forEach((item, i) => {
                         const y = 130 + i*40;
@@ -768,9 +1027,19 @@
                         ctx.fillStyle = 'white'; ctx.font = '16px Arial';
                         ctx.fillText(`${item.name} - ${item.cost}💰`, W/2, y+6);
                     });
-                } else {
+                } else if (game.shopTab === 'weapons') {
                     const wps = getShopWeapons();
                     wps.forEach((wpn, i) => {
+                        const y = 130 + i*40;
+                        ctx.fillStyle = '#333'; ctx.fillRect(W/2-200, y-15, 400, 50);
+                        ctx.fillStyle = 'white'; ctx.font = '16px Arial';
+                        ctx.fillText(`${wpn.name} - ${wpn.cost}💰`, W/2, y);
+                        ctx.font = '11px Arial'; ctx.fillStyle = '#ccc';
+                        ctx.fillText(wpn.stats, W/2, y+18);
+                    });
+                } else if (game.shopTab === 'melee') {
+                    const melee = getShopMelee();
+                    melee.forEach((wpn, i) => {
                         const y = 130 + i*40;
                         ctx.fillStyle = '#333'; ctx.fillRect(W/2-200, y-15, 400, 50);
                         ctx.fillStyle = 'white'; ctx.font = '16px Arial';
@@ -802,7 +1071,7 @@
                     'T – подобрать турель',
                     '1 / 2 / 3 – смена оружия',
                     'N – справка (это окно)',
-                    'После смерти: R – начать заново'
+                    'Босс: огромный запас здоровья, но уязвим для всего оружия'
                 ];
                 ctx.font = '18px Arial';
                 lines.forEach((line, i) => ctx.fillText(line, W/2, 100 + i * 30));
@@ -829,15 +1098,21 @@
                             const y = 130 + i*40;
                             if (mx>W/2-160 && mx<W/2+160 && my>y-15 && my<y+20) buyItem(i);
                         });
-                    } else {
+                    } else if (game.shopTab === 'weapons') {
                         getShopWeapons().forEach((wpn,i) => {
                             const y = 130 + i*40;
                             if (mx>W/2-200 && mx<W/2+200 && my>y-15 && my<y+35) buyWeapon(wpn);
                         });
+                    } else if (game.shopTab === 'melee') {
+                        getShopMelee().forEach((wpn,i) => {
+                            const y = 130 + i*40;
+                            if (mx>W/2-200 && mx<W/2+200 && my>y-15 && my<y+35) buyWeapon(wpn);
+                        });
                     }
-                    if (my>70 && my<95) {
-                        if (mx>W/2-160 && mx<W/2-30) game.shopTab = 'items';
-                        if (mx>W/2+30 && mx<W/2+160) game.shopTab = 'weapons';
+                    if (my > 70 && my < 100) {
+                        if (mx > W/2-250 && mx < W/2-150) game.shopTab = 'items';
+                        if (mx > W/2-50 && mx < W/2+50) game.shopTab = 'weapons';
+                        if (mx > W/2+150 && mx < W/2+250) game.shopTab = 'melee';
                     }
                 }
             }
@@ -877,7 +1152,7 @@
             if (e.code === 'KeyR' && game.running && !game.paused) {
                 const curW = game.weapons[game.currentWeaponIndex];
                 const wDef = WEAPONS[curW.key];
-                if (curW.ammo < wDef.magSize && !game.reloading) {
+                if (curW.ammo < wDef.magSize && !game.reloading && wDef.magSize !== Infinity) {
                     game.reloading = true;
                     game.reloadTimer = wDef.reloadTime;
                 }
